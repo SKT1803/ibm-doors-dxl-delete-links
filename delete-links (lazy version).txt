@@ -1,0 +1,246 @@
+/************************************************************************************************************************
+
+
+        Developer: Serdar Kemal Topkaya
+
+        Deleting links in the current module.
+     
+        - What kind of links can be deleted?
+          - If the object has,
+             > only out-going links
+             > only in-coming links 
+             > both in-coming and out-going
+          - If the object is parent, 
+             > It first deletes the links of the children, then deletes the links of the parent.
+                    - parent
+                        - child
+             > If the parent's child have children, it deletes the links of all children. 
+                    - parent
+                        - child
+                            - child 
+             > Level 4 has not been tested.
+                    - parent
+                        - child
+                            - child
+                                - child
+ 
+        Instructions: 
+          - When the code is executed, the interface will open.
+          - In this interface, 
+            * Enter the id of the object then choose the link type ("IN","OUT","IN-OUT")
+            * To complete the deletion process, click the kapat/close button in the interface.
+          - If the user does not have a permission to access the modules to which the links are linked,
+            those links won't be deleted. These modules are displayed in the infoBox.
+
+**********************************************************************************************************************/
+
+Module m = current
+
+string module_name = m."Name"
+
+m = edit(module_name, true)
+
+int id 
+string linkOp
+string cb = ""
+bool cbCheck = false
+bool cbCheck2 = false
+
+string choices[] = {"IN", "OUT", "IN-OUT"}
+
+DB db = create ("Delete Links Of An Object", styleCentered|styleStandard)
+DBE dbe = frame (db, "", 400, 150)
+
+DBE dbe1
+DBE dbe2
+
+void assignIn(DB db) {
+
+string idString = get(dbe1)
+id = intOf(idString)
+int linkOpIndex = get(dbe2)
+string linkOp = choices[linkOpIndex]
+
+bool hasIn(Object o){ // checks in-going links
+    Link l
+    for l in o <-"*" do {
+          return true
+      }
+     return false
+    }
+
+bool hasOut(Object o){
+  Link l
+  for l in o ->"*" do {
+          return true
+     }
+ return false
+}
+
+bool hasBoth(Object o ){
+bool inG = false
+bool outG = false
+   
+  LinkRef lnkRef
+  for lnkRef in o <- "*" do {
+          inG = true
+          break
+      }
+
+   if(hasOut(o)) outG = true
+
+   return inG && outG
+} 
+
+void openModules(Module n, Object o){
+
+Module m = n
+Object v = o
+Link lnk = null
+string a = null
+
+  LinkRef lnkRef
+  for lnkRef in v <- "*" do {
+        string srcMod = fullName source(lnkRef)    
+        m = edit(srcMod, false)
+
+       if(null m){
+              if(srcMod != a) {
+              cb = cb+"\n" +srcMod
+              cbCheck = true
+               }
+              a = srcMod
+            }
+        else {
+             cbCheck2 = true
+               }
+       
+     }
+
+}
+
+void deleteLinks(Module n, int id, string str){
+
+  Module m = n
+  Object o 
+  Object b
+  string st = str  
+  int flagCount = 0
+
+       for o in m do {         
+       int num =  o."Absolute Number"     
+       if( id == num  ){
+              b = o
+           }
+       }
+       
+       if(hasOut(b) && str == "OUT"){     
+             flagCount = 1 // only OUT
+        }else if(hasOut(b) && str == "IN-OUT" ){
+            flagCount = 3 // IN-OUT
+            openModules(m,b)
+         }else if(hasOut(b) && str == "IN"){
+              flagCount = 4 // IN-OUT -> IN 
+            openModules(m,b)
+          }else if(hasOut(b) && str == "OUT"){
+            flagCount = 5 // IN-OUT -> OUT 
+          } else{
+           flagCount = 2 // only IN
+           openModules(m,b)
+            
+         }
+    
+      if(cbCheck == true){
+     infoBox "Failed to open the modules ! No Access Permission\n\n" cb "\n"
+     cb = ""
+   }
+     for o in m do {          
+        int num =  o."Absolute Number"
+       
+        if( id == num  ){
+
+               Link link
+               if( (flagCount == 3) || (flagCount == 4) ||  (flagCount == 2) ){
+                for link in o <- "*" do { 
+                            delete(link)
+                        }
+               }
+ 
+              if((flagCount == 1) || (flagCount == 3) ||  (flagCount == 5) ){
+                 for link in o -> "*" do {
+                             delete(link)
+                           }
+               }
+
+              if( !leaf(o) ){ // for parent object
+                           
+                    Object c
+ 
+                    bool flag = false
+                    int flag2 = 0
+                    for c in o do { 
+                        if(hasBoth(c)){
+                             flag2 = 1
+                               }
+                        if( hasIn(c) && !hasBoth(c)){                                          
+                             flag = true      
+                               }else if(hasOut(c)  && !hasBoth(c)) {                                
+                                   flag = false                                      
+                                   }  
+                                                        
+                         if(flag) { // delete the links not the object
+
+                                Object z                         
+                                for z in o do {
+                                int idd = z."Absolute Number"                                              
+	                   deleteLinks(m, idd, "IN")
+                                             }
+                                 }else if(flag2==1){
+                                    Object z                         
+                                    for z in o do {        
+                                         int idd = z."Absolute Number"                                                                                                      
+	                             deleteLinks(m, idd, "IN-OUT")
+                                                }      
+                                }
+                              else {
+                                    Object z                         
+                                    for z in o do {        
+                                         int idd = z."Absolute Number"                                                                                         
+	                                 deleteLinks(m, idd, "OUT")
+                                                }
+                                     }
+                        
+                           
+                        }
+      }           
+  	                         
+                 break
+              }
+    }
+
+}
+
+deleteLinks(m,id, linkOp)
+if(cbCheck == false || cbCheck2 == true){
+infoBox "All links for object: " id " have been deleted!\n\n           Click the Close/Kapat button!"
+}
+
+} // method assignIn end
+
+void dbClose (DB db) {
+
+   release db
+   hide db
+   destroy db
+   db = null
+   halt
+
+}
+
+dbe1 = field (db, "Object ID: ", "", 20, false)
+dbe2 = radioBox (db, "Link Type ", choices, 0)
+
+apply (db, assignIn)
+close (db, true, dbClose)
+
+show(db)

@@ -1,0 +1,148 @@
+// IBM DOORS DXL Script - Remove Links of an Object
+// Description:
+// Allows deleting IN, OUT, or IN-OUT links of an object by its ID.
+// Recursively deletes links from children before the parent.
+// Displays inaccessible modules in a message box.
+
+Module m = current
+string module_name = m."Name"
+m = edit(module_name, true)
+
+int id
+string linkOp
+string cb = "" // message for inaccessible modules
+bool cbCheck = false // indicates if any inaccessible modules were found
+bool cbCheck2 = false // indicates some modules were accessible
+
+string choices[] = {"IN", "OUT", "IN-OUT"}
+
+// --- Dialog Box Setup ---
+DB db = create("Delete Links Of An Object", styleCentered | styleStandard)
+DBE dbe = frame(db, "", 400, 150)
+
+DBE dbe1 = field(db, "Object ID: ", "", 20, false)
+DBE dbe2 = radioBox(db, "Link Type", choices, 0)
+
+// --- Helper Functions ---
+
+bool hasIn(Object o) {
+  for (Link l in o <- "*") return true
+  return false
+}
+
+bool hasOut(Object o) {
+  for (Link l in o -> "*") return true
+  return false
+}
+
+bool hasBoth(Object o) {
+  bool inG = false
+  if (hasIn(o)) inG = true
+  if (inG && hasOut(o)) return true
+  return false
+}
+
+void openModules(Module n, Object o) {
+  Module m = n
+  Object v = o
+  string lastModule = null
+
+  for (LinkRef lnkRef in v <- "*") {
+    string srcMod = fullName source(lnkRef)
+    m = edit(srcMod, false)
+
+    if (null m) {
+      if (srcMod != lastModule) {
+        cb += "\n" + srcMod
+        cbCheck = true
+      }
+      lastModule = srcMod
+    } else {
+      cbCheck2 = true
+    }
+  }
+}
+
+void deleteLinks(Module n, int id, string str) {
+  Module m = n
+  Object target = null
+  int flagCount = 0
+
+  for (Object o in m) {
+    if (o."Absolute Number" == id) {
+      target = o
+      break
+    }
+  }
+
+  if (null target) return
+
+  if (hasOut(target) && str == "OUT") {
+    flagCount = 1
+  } else if (hasOut(target) && str == "IN-OUT") {
+    flagCount = 3
+    openModules(m, target)
+  } else if (hasOut(target) && str == "IN") {
+    flagCount = 4
+    openModules(m, target)
+  } else if (hasOut(target)) {
+    flagCount = 5
+  } else {
+    flagCount = 2
+    openModules(m, target)
+  }
+
+  if (cbCheck) {
+    infoBox "Failed to open the modules! No Access Permission\n\n" cb "\n"
+    cb = ""
+  }
+
+  for (Object o in m) {
+    if (o."Absolute Number" == id) {
+      if (flagCount == 2 || flagCount == 3 || flagCount == 4) {
+        for (Link l in o <- "*") delete l
+      }
+      if (flagCount == 1 || flagCount == 3 || flagCount == 5) {
+        for (Link l in o -> "*") delete l
+      }
+
+      if (!leaf(o)) {
+        for (Object child in o) {
+          if (hasBoth(child)) {
+            deleteLinks(m, child."Absolute Number", "IN-OUT")
+          } else if (hasIn(child)) {
+            deleteLinks(m, child."Absolute Number", "IN")
+          } else {
+            deleteLinks(m, child."Absolute Number", "OUT")
+          }
+        }
+      }
+
+      break
+    }
+  }
+}
+
+void assignIn(DB db) {
+  id = intOf(get(dbe1))
+  int linkOpIndex = get(dbe2)
+  linkOp = choices[linkOpIndex]
+
+  deleteLinks(m, id, linkOp)
+
+  if (!cbCheck || cbCheck2) {
+    infoBox "All links for object: " id " have been deleted!\n\nClick the Close/Kapat button!"
+  }
+}
+
+void dbClose(DB db) {
+  release db
+  hide db
+  destroy db
+  db = null
+  halt
+}
+
+apply(db, assignIn)
+close(db, true, dbClose)
+show(db)
