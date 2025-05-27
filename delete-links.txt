@@ -1,0 +1,192 @@
+/************************************************************************************************************************
+
+
+        Developer: Serdar Kemal Topkaya
+
+        Deleting links in the current module.
+     
+        - What kind of links can be deleted?
+          - If the object has,
+             > only out-going links
+             > only in-coming links 
+             > both in-coming and out-going
+          - If the object is parent, 
+             > It first deletes the links of the children, then deletes the links of the parent.
+                    - parent
+                        - child
+             > If the parent's child have children, it deletes the links of all children. 
+                    - parent
+                        - child
+                            - child 
+             > Level 4 has not been tested.
+                    - parent
+                        - child
+                            - child
+                                - child
+ 
+        Instructions: 
+          - When the code is executed, the interface will open.
+          - In this interface, 
+            * Enter the id of the object then choose the link type ("IN","OUT","IN-OUT")
+            * To complete the deletion process, click the kapat/close button in the interface.
+          - If the user does not have a permission to access the modules to which the links are linked,
+            those links won't be deleted. These modules are displayed in the infoBox.
+
+**********************************************************************************************************************/
+
+Module m = current
+string module_name = m."Name"
+m = edit(module_name, true)
+
+int id
+string linkOp
+string cb = "" // message for inaccessible modules
+bool cbCheck = false // indicates if any inaccessible modules were found
+bool cbCheck2 = false // indicates some modules were accessible
+
+string choices[] = {"IN", "OUT", "IN-OUT"}
+
+// --- Dialog Box Setup ---
+DB db = create("Delete Links Of An Object", styleCentered | styleStandard)
+DBE dbe = frame(db, "", 400, 150)
+
+DBE dbe1 = field(db, "Object ID: ", "", 20, false)
+DBE dbe2 = radioBox(db, "Link Type", choices, 0)
+
+// --- Helper Functions ---
+
+// Check if object has incoming links
+bool hasIn(Object o) {
+  for (Link l in o <- "*") return true
+  return false
+}
+
+// Check if object has outgoing links
+bool hasOut(Object o) {
+  for (Link l in o -> "*") return true
+  return false
+}
+
+// Check if object has both incoming and outgoing links
+bool hasBoth(Object o) {
+  bool inG = false
+  if (hasIn(o)) inG = true
+  if (inG && hasOut(o)) return true
+  return false
+}
+
+// Try to open modules from which links come; record failures
+void openModules(Module n, Object o) {
+  Module m = n
+  Object v = o
+  string lastModule = null
+
+  for (LinkRef lnkRef in v <- "*") {
+    string srcMod = fullName source(lnkRef)
+    m = edit(srcMod, false)
+    
+    if (null m) {
+      if (srcMod != lastModule) {
+        cb += "\n" + srcMod
+        cbCheck = true
+      }
+      lastModule = srcMod
+    } else {
+      cbCheck2 = true
+    }
+  }
+}
+
+// Core recursive deletion function
+void deleteLinks(Module n, int id, string str) {
+  Module m = n
+  Object target = null
+  int flagCount = 0
+
+  // Find object by Absolute Number
+  for (Object o in m) {
+    if (o."Absolute Number" == id) {
+      target = o
+      break
+    }
+  }
+
+  if (null target) return
+
+  // Determine deletion scope
+  if (hasOut(target) && str == "OUT") {
+    flagCount = 1
+  } else if (hasOut(target) && str == "IN-OUT") {
+    flagCount = 3
+    openModules(m, target)
+  } else if (hasOut(target) && str == "IN") {
+    flagCount = 4
+    openModules(m, target)
+  } else if (hasOut(target)) {
+    flagCount = 5
+  } else {
+    flagCount = 2
+    openModules(m, target)
+  }
+
+  if (cbCheck) {
+    infoBox "Failed to open the modules! No Access Permission\n\n" cb "\n"
+    cb = ""
+  }
+
+  // Delete links for target object
+  for (Object o in m) {
+    if (o."Absolute Number" == id) {
+      // Delete incoming links
+      if (flagCount == 2 || flagCount == 3 || flagCount == 4) {
+        for (Link l in o <- "*") delete l
+      }
+      // Delete outgoing links
+      if (flagCount == 1 || flagCount == 3 || flagCount == 5) {
+        for (Link l in o -> "*") delete l
+      }
+
+      // If object has children, handle recursively
+      if (!leaf(o)) {
+        for (Object child in o) {
+          if (hasBoth(child)) {
+            deleteLinks(m, child."Absolute Number", "IN-OUT")
+          } else if (hasIn(child)) {
+            deleteLinks(m, child."Absolute Number", "IN")
+          } else {
+            deleteLinks(m, child."Absolute Number", "OUT")
+          }
+        }
+      }
+
+      break
+    }
+  }
+}
+
+// Called when "Apply" button is pressed
+void assignIn(DB db) {
+  id = intOf(get(dbe1))
+  int linkOpIndex = get(dbe2)
+  linkOp = choices[linkOpIndex]
+
+  deleteLinks(m, id, linkOp)
+
+  if (!cbCheck || cbCheck2) {
+    infoBox "All links for object: " id " have been deleted!\n\nClick the Close/Kapat button!"
+  }
+}
+
+// Dialog close callback
+void dbClose(DB db) {
+  release db
+  hide db
+  destroy db
+  db = null
+  halt
+}
+
+// Dialog controls
+apply(db, assignIn)
+close(db, true, dbClose)
+show(db)
