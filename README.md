@@ -69,7 +69,7 @@ parent
   - You’ll get a message listing the inaccessible modules
 - Level 4 nested children (`parent → child → child → child`) **have not been tested**
 - Make sure the module is **in edit mode** before running the script
-- If code wont work, try lazy version !!!
+- If code does not work, try lazy version !!!
 
 ---
 
